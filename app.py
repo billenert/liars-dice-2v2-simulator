@@ -174,7 +174,9 @@ def new_game():
     cfg = MODES[mode]
     all_bids = get_all_bids(cfg['total_dice'])
 
-    human_first = data.get('human_first', random.choice([True, False]))
+    human_first = data.get('human_first')
+    if human_first is None:
+        human_first = random.choice([True, False])
     human_dice = sorted([random.randint(1, 6) for _ in range(cfg['dice_per_player'])])
     ai_dice = sorted([random.randint(1, 6) for _ in range(cfg['dice_per_player'])])
 
