@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strategy Explorer — Liar's Dice</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --surface2: #0f3460;
+    --accent: #e94560;
+    --text: #eee;
+    --text-dim: #888;
+    --green: #4ecca3;
+    --gold: #f5c518;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .header h1 { font-size: 1.3rem; letter-spacing: 2px; }
+  .header a {
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    text-decoration: none;
+  }
+  .header a:hover { color: var(--text); }
+
+  /* Breadcrumb */
+  .breadcrumb {
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 0.85rem;
+  }
+  .crumb {
+    cursor: pointer;
+    color: var(--green);
+    padding: 2px 8px;
+    border-radius: 4px;
+    transition: background 0.15s;
+  }
+  .crumb:hover { background: var(--surface2); }
+  .crumb.current {
+    color: var(--text);
+    cursor: default;
+    background: var(--surface2);
+    font-weight: bold;
+  }
+  .crumb-sep { color: var(--text-dim); }
+
+  /* Player badge */
+  .player-badge {
+    display: inline-block;
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 6px 14px;
+    margin-bottom: 12px;
+    font-size: 0.8rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .player-badge.p0 { border-left: 3px solid var(--green); }
+  .player-badge.p1 { border-left: 3px solid var(--accent); }
+
+  /* Strategy table */
+  .strat-table {
+    width: 100%;
+    margin-bottom: 16px;
+  }
+  .strat-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .strat-row:hover { background: rgba(255,255,255,0.03); }
+  .hand-label {
+    width: 56px;
+    flex-shrink: 0;
+    font-size: 0.85rem;
+    text-align: right;
+    font-weight: bold;
+  }
+  .hand-label .ace { color: var(--gold); }
+  .bar-container {
+    flex: 1;
+    height: 28px;
+    display: flex;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--surface);
+    position: relative;
+  }
+  .bar-seg {
+    height: 100%;
+    position: relative;
+    cursor: pointer;
+    transition: filter 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .bar-seg:hover { filter: brightness(1.3); }
+  .bar-seg .seg-label {
+    font-size: 0.6rem;
+    color: rgba(0,0,0,0.7);
+    font-weight: bold;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .bar-empty {
+    flex: 1;
+    height: 100%;
+  }
+  .dominant {
+    width: 70px;
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    text-align: left;
+  }
+
+  /* Tooltip */
+  .tooltip {
+    position: fixed;
+    background: #000;
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    pointer-events: none;
+    z-index: 100;
+    display: none;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  }
+
+  /* Legend */
+  .legend {
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+  }
+  .legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  /* Navigation buttons */
+  .nav-section {
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+  .nav-section h3 {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+  }
+  .nav-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .nav-btn {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: bold;
+    cursor: pointer;
+    color: #000;
+    transition: filter 0.15s, transform 0.1s;
+  }
+  .nav-btn:hover {
+    filter: brightness(1.2);
+    transform: translateY(-1px);
+  }
+  .nav-btn.liar-btn {
+    background: var(--accent);
+    color: #fff;
+  }
+  .nav-btn .btn-freq {
+    font-size: 0.6rem;
+    font-weight: normal;
+    opacity: 0.7;
+    margin-left: 4px;
+  }
+
+  .back-btn {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid #444;
+    padding: 6px 16px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+    margin-bottom: 12px;
+  }
+  .back-btn:hover { border-color: var(--text-dim); }
+
+  /* Loading */
+  .loading {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+  }
+  .error-msg {
+    text-align: center;
+    padding: 40px;
+    color: var(--accent);
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>STRATEGY EXPLORER</h1>
+  <a href="/">Play Game</a>
+</div>
+
+<div id="app">
+  <div class="loading" id="loading">Loading strategy data...</div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+// --- State ---
+let currentHistory = [];
+let nodeData = null;
+
+// --- Action Colors ---
+// Generate distinct colors for each possible action
+const ACTION_COLORS = {};
+const BIDS = [];
+for (let q = 1; q <= 4; q++)
+  for (let f = 2; f <= 6; f++)
+    BIDS.push(`${q}x${f}`);
+
+// HSL palette: spread hues, skip red zone (used for liar)
+BIDS.forEach((bid, i) => {
+  const hue = (i * 17 + 200) % 360;
+  // Skip hues too close to red (340-20)
+  const adjustedHue = (hue >= 340 || hue <= 20) ? hue + 40 : hue;
+  ACTION_COLORS[bid] = `hsl(${adjustedHue % 360}, 65%, 55%)`;
+});
+ACTION_COLORS['liar'] = '#e94560';
+
+const FACE_NAMES = {2:'twos', 3:'threes', 4:'fours', 5:'fives', 6:'sixes'};
+
+function formatAction(a) {
+  if (a === 'liar') return 'Liar';
+  const [q, f] = a.split('x');
+  return `${q}\u00d7${FACE_NAMES[f]}`;
+}
+
+function formatHandHTML(hand) {
+  const dice = hand.split(',');
+  return dice.map(d => d === '1' ? `<span class="ace">${d}</span>` : d).join(',');
+}
+
+// --- Tooltip ---
+const tooltip = document.getElementById('tooltip');
+document.addEventListener('mousemove', (e) => {
+  tooltip.style.left = (e.clientX + 12) + 'px';
+  tooltip.style.top = (e.clientY - 30) + 'px';
+});
+
+function showTooltip(text) {
+  tooltip.textContent = text;
+  tooltip.style.display = 'block';
+}
+function hideTooltip() {
+  tooltip.style.display = 'none';
+}
+
+// --- API ---
+async function loadNode(history) {
+  currentHistory = history;
+  const app = document.getElementById('app');
+  app.innerHTML = '<div class="loading">Loading...</div>';
+
+  const param = history.join(',');
+  const resp = await fetch(`/api/explorer/node?history=${encodeURIComponent(param)}`);
+  if (!resp.ok) {
+    app.innerHTML = '<div class="error-msg">No strategy data for this node.</div>';
+    return;
+  }
+  nodeData = await resp.json();
+
+  // Check if any hands have data
+  const hasData = nodeData.hands.some(h => Object.keys(h.actions).length > 0);
+  if (!hasData) {
+    app.innerHTML = `<div class="error-msg">No strategy data at this node.<br><br></div>`;
+    if (history.length > 0) {
+      app.innerHTML += '';
+    }
+    render();
+    return;
+  }
+  render();
+}
+
+function render() {
+  const app = document.getElementById('app');
+  const d = nodeData;
+  const hasData = d.hands.some(h => Object.keys(h.actions).length > 0);
+
+  let html = '';
+
+  // Breadcrumb
+  html += '<div class="breadcrumb">';
+  html += `<span class="crumb${currentHistory.length === 0 ? ' current' : ''}" onclick="navigateToIndex(0)">Opening</span>`;
+  for (let i = 0; i < currentHistory.length; i++) {
+    html += '<span class="crumb-sep">&rarr;</span>';
+    const isCurrent = i === currentHistory.length - 1;
+    html += `<span class="crumb${isCurrent ? ' current' : ''}" onclick="navigateToIndex(${i + 1})">${formatAction(currentHistory[i])}</span>`;
+  }
+  html += '</div>';
+
+  // Back button
+  if (currentHistory.length > 0) {
+    html += `<button class="back-btn" onclick="navigateBack()">&larr; Back</button> `;
+  }
+
+  if (!hasData) {
+    html += '<div class="error-msg">No strategy data at this node.</div>';
+    app.innerHTML = html;
+    return;
+  }
+
+  // Player badge
+  const pClass = d.player === 0 ? 'p0' : 'p1';
+  html += `<span class="player-badge ${pClass}">Player ${d.player} to act</span>`;
+
+  // Compute aggregate frequencies for navigation buttons
+  const aggFreq = {};
+  let totalWeight = 0;
+  d.hands.forEach(h => {
+    const w = Object.values(h.actions).reduce((a, b) => a + b, 0);
+    for (const [action, prob] of Object.entries(h.actions)) {
+      aggFreq[action] = (aggFreq[action] || 0) + prob;
+    }
+    totalWeight += w;
+  });
+
+  // Legend
+  html += '<div class="legend">';
+  for (const action of d.all_actions) {
+    const pct = totalWeight > 0 ? ((aggFreq[action] || 0) / totalWeight * 100).toFixed(1) : '0.0';
+    html += `<div class="legend-item">
+      <div class="legend-swatch" style="background:${ACTION_COLORS[action] || '#555'}"></div>
+      ${formatAction(action)} <span style="color:var(--text-dim)">${pct}%</span>
+    </div>`;
+  }
+  html += '</div>';
+
+  // Strategy table
+  html += '<div class="strat-table">';
+  for (const hand of d.hands) {
+    const total = Object.values(hand.actions).reduce((a, b) => a + b, 0);
+    let dominant = '';
+    let dominantProb = 0;
+    for (const [a, p] of Object.entries(hand.actions)) {
+      if (p > dominantProb) { dominantProb = p; dominant = a; }
+    }
+
+    html += '<div class="strat-row">';
+    html += `<div class="hand-label">[${formatHandHTML(hand.hand)}]</div>`;
+    html += '<div class="bar-container">';
+
+    if (total === 0) {
+      html += '<div class="bar-empty"></div>';
+    } else {
+      for (const action of d.all_actions) {
+        const prob = hand.actions[action] || 0;
+        if (prob < 0.005) continue;
+        const pct = (prob / total * 100);
+        const color = ACTION_COLORS[action] || '#555';
+        const label = pct > 8 ? formatAction(action) : (pct > 4 ? action : '');
+        html += `<div class="bar-seg" style="width:${pct}%;background:${color}"
+                      onmouseenter="showTooltip('[${hand.hand}] ${formatAction(action)}: ${(prob / total * 100).toFixed(1)}%')"
+                      onmouseleave="hideTooltip()">
+                   <span class="seg-label">${label}</span>
+                 </div>`;
+      }
+    }
+
+    html += '</div>';
+    html += `<div class="dominant">${dominant ? formatAction(dominant) : ''} ${dominant ? (dominantProb / total * 100).toFixed(0) + '%' : ''}</div>`;
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Navigation buttons
+  html += '<div class="nav-section">';
+  html += '<h3>Navigate to action</h3>';
+  html += '<div class="nav-buttons">';
+  for (const action of d.navigable_actions) {
+    const color = ACTION_COLORS[action] || '#555';
+    const pct = totalWeight > 0 ? ((aggFreq[action] || 0) / totalWeight * 100).toFixed(0) : '0';
+    html += `<button class="nav-btn" style="background:${color}" onclick="navigateTo('${action}')">
+               ${formatAction(action)}<span class="btn-freq">${pct}%</span>
+             </button>`;
+  }
+  // Liar button (terminal, non-navigable but show it grayed)
+  if (d.all_actions.includes('liar')) {
+    const pct = totalWeight > 0 ? ((aggFreq['liar'] || 0) / totalWeight * 100).toFixed(0) : '0';
+    html += `<button class="nav-btn liar-btn" style="opacity:0.5;cursor:default" title="Terminal action (ends the game)">
+               Liar<span class="btn-freq">${pct}%</span>
+             </button>`;
+  }
+  html += '</div></div>';
+
+  app.innerHTML = html;
+}
+
+function navigateTo(action) {
+  loadNode([...currentHistory, action]);
+}
+
+function navigateBack() {
+  loadNode(currentHistory.slice(0, -1));
+}
+
+function navigateToIndex(idx) {
+  loadNode(currentHistory.slice(0, idx));
+}
+
+// --- Init ---
+loadNode([]);
+</script>
+</body>
+</html>

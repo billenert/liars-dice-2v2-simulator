@@ -19,6 +19,12 @@ for qty in range(1, 5):  # 1 to 4
         ALL_BIDS.append(f"{qty}x{face}")
 BID_INDEX = {b: i for i, b in enumerate(ALL_BIDS)}
 
+# All 21 possible hands (2 dice, sorted ascending)
+ALL_HANDS = []
+for _i in range(1, 7):
+    for _j in range(_i, 7):
+        ALL_HANDS.append(f"{_i},{_j}")
+
 
 def get_db():
     """Get a thread-local DB connection."""
@@ -47,8 +53,9 @@ def lookup_strategy(db, player, hand, history):
 
 
 def sample_action(strategy):
-    """Sample an action from a strategy distribution."""
-    r = random.random()
+    """Sample an action from a normalized strategy distribution."""
+    total = sum(strategy.values())
+    r = random.random() * total
     cumulative = 0.0
     for action, prob in strategy.items():
         cumulative += prob
@@ -90,6 +97,62 @@ def save_game_state(state):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+
+@app.route('/explorer')
+def explorer():
+    return render_template('explorer.html')
+
+
+@app.route('/api/explorer/node')
+def explorer_node():
+    """Return all 21 hands' strategies for the acting player at a given node."""
+    history_param = request.args.get('history', '').strip()
+    history = [h.strip() for h in history_param.split(',') if h.strip()] if history_param else []
+    player = len(history) % 2
+
+    if not history:
+        history_str = "opening"
+    else:
+        history_str = ' -> '.join(history)
+
+    db = get_db()
+    hands = []
+    all_actions_set = set()
+
+    for hand_str in ALL_HANDS:
+        key = f"P{player}|{hand_str}|{history_str}"
+        row = db.execute("SELECT actions FROM strategy WHERE key = ?", (key,)).fetchone()
+        actions = {}
+        if row:
+            for part in row[0].split('|'):
+                action, prob = part.split(':')
+                actions[action] = float(prob)
+                all_actions_set.add(action)
+        hands.append({
+            'hand': hand_str,
+            'actions': actions,
+        })
+
+    db.close()
+
+    # Sort actions in bid order, liar last
+    def action_sort_key(a):
+        if a == 'liar':
+            return len(ALL_BIDS)
+        return BID_INDEX.get(a, -1)
+
+    all_actions = sorted(all_actions_set, key=action_sort_key)
+    navigable_actions = [a for a in all_actions if a != 'liar']
+
+    return jsonify({
+        'player': player,
+        'history': history,
+        'history_display': history_str,
+        'hands': hands,
+        'all_actions': all_actions,
+        'navigable_actions': navigable_actions,
+    })
 
 
 @app.route('/api/new_game', methods=['POST'])
