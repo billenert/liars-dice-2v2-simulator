@@ -175,6 +175,56 @@
     margin-bottom: 20px; line-height: 1.6;
   }
   .start-buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .history-area { max-height: 400px; }
+  .solver-hint {
+    margin: 2px 0 6px 48px;
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.04);
+    border-left: 2px solid var(--accent2);
+    border-radius: 0 4px 4px 0;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .solver-hint .hint-label {
+    color: var(--accent2);
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 0.6rem;
+  }
+  .solver-hint .hint-bar {
+    display: flex;
+    height: 14px;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 3px;
+    background: var(--surface2);
+  }
+  .solver-hint .hint-seg {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .solver-hint .hint-seg span {
+    font-size: 0.55rem;
+    color: rgba(0,0,0,0.6);
+    font-weight: bold;
+    white-space: nowrap;
+  }
+  .solver-hint .hint-chosen {
+    outline: 2px solid #fff;
+    outline-offset: -1px;
+    z-index: 1;
+  }
+  .solver-hint-hidden {
+    margin: 2px 0 6px 48px;
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    font-style: italic;
+  }
   .rules {
     background: var(--surface); border-radius: 12px;
     padding: 16px 20px; margin-top: 8px;
@@ -275,6 +325,49 @@ function formatBid(bid) {
   return `${q} \u00d7 ${faceNames[f] || f}`;
 }
 
+// Solver hint colors (match explorer)
+const HINT_COLORS = {};
+(function() {
+  const bids = [];
+  for (let q = 1; q <= DICE_PER_PLAYER * 2; q++)
+    for (let f = 2; f <= 6; f++)
+      bids.push(`${q}x${f}`);
+  bids.forEach((bid, i) => {
+    const hue = (i * 17 + 200) % 360;
+    const adj = (hue >= 340 || hue <= 20) ? hue + 40 : hue;
+    HINT_COLORS[bid] = `hsl(${adj % 360}, 65%, 55%)`;
+  });
+  HINT_COLORS['liar'] = '#e94560';
+})();
+
+function renderSolverHint(hint, chosenAction, isHuman) {
+  if (!hint) {
+    if (!isHuman) return '<div class="solver-hint-hidden">Solver: hidden until game over</div>';
+    return '';
+  }
+  const total = Object.values(hint).reduce((a, b) => a + b, 0);
+  if (total === 0) return '';
+
+  // Sort actions by probability descending for the text list
+  const sorted = Object.entries(hint).sort((a, b) => b[1] - a[1]);
+
+  // Build stacked bar
+  let bar = '';
+  for (const [action, prob] of sorted) {
+    const pct = prob / total * 100;
+    if (pct < 0.5) continue;
+    const color = HINT_COLORS[action] || '#555';
+    const isChosen = action === chosenAction;
+    const label = pct > 10 ? `${formatBid(action)} ${pct.toFixed(0)}%` : (pct > 5 ? `${pct.toFixed(0)}%` : '');
+    bar += `<div class="hint-seg${isChosen ? ' hint-chosen' : ''}" style="width:${pct}%;background:${color}" title="${formatBid(action)}: ${pct.toFixed(1)}%"><span>${label}</span></div>`;
+  }
+
+  return `<div class="solver-hint">
+    <div class="hint-label">Solver</div>
+    <div class="hint-bar">${bar}</div>
+  </div>`;
+}
+
 function updateScores() {
   document.getElementById('score-human').textContent = scores.human;
   document.getElementById('score-bot').textContent = scores.bot;
@@ -306,6 +399,7 @@ function renderState() {
   if (state.history.length === 0) {
     ha.innerHTML = '<div style="color:var(--text-dim); font-size:0.8rem; text-align:center;">No bids yet</div>';
   } else {
+    const hints = state.solver_hints || [];
     let html = '';
     for (let i = 0; i < state.history.length; i++) {
       const playerNum = i % 2;
@@ -318,6 +412,7 @@ function renderState() {
         <span class="who ${whoCls}">${who}</span>
         <span class="${bidCls}">${formatBid(bid)}</span>
       </div>`;
+      html += renderSolverHint(hints[i], bid, isHuman);
     }
     ha.innerHTML = html;
     ha.scrollTop = ha.scrollHeight;

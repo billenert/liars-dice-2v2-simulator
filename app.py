@@ -108,6 +108,32 @@ def resolve_challenge(dice_p0, dice_p1, last_bid):
     return count < bid_qty, count, bid_qty, bid_face
 
 
+def compute_solver_hints(state, reveal_bot=False):
+    """Compute the solver's strategy for each action in the history.
+
+    For human actions: always show the strategy for the human's hand.
+    For bot actions: only show after game over (reveal_bot=True).
+    """
+    mode = state['mode']
+    db = get_db(mode)
+    hints = []
+    for i in range(len(state['history'])):
+        acting_player = i % 2  # P0 acts at even indices, P1 at odd
+        is_human = acting_player == state['human_player']
+        history_before = state['history'][:i]
+        if is_human:
+            hand = state['human_dice']
+        else:
+            hand = state['ai_dice']
+        if is_human or reveal_bot:
+            strategy = lookup_strategy(db, acting_player, hand, history_before)
+            hints.append(strategy)
+        else:
+            hints.append(None)
+    db.close()
+    return hints
+
+
 def get_game_state():
     if 'game' not in session:
         return None
@@ -168,7 +194,10 @@ def new_game():
     }
     save_game_state(state)
 
-    resp = {
+    if not human_first:
+        return ai_move_and_respond(state)
+
+    return jsonify({
         'human_dice': human_dice,
         'human_player': human_player,
         'human_goes_first': human_first,
@@ -176,12 +205,8 @@ def new_game():
         'your_turn': human_player == 0,
         'valid_bids': all_bids[:],
         'can_call_liar': False,
-    }
-
-    if not human_first:
-        return ai_move_and_respond(state)
-
-    return jsonify(resp)
+        'solver_hints': [],
+    })
 
 
 def ai_move_and_respond(state):
@@ -234,6 +259,7 @@ def ai_move_and_respond(state):
             'result': state['result'],
             'valid_bids': [],
             'can_call_liar': False,
+            'solver_hints': compute_solver_hints(state, reveal_bot=True),
         })
 
     last_bid = state['history'][-1] if state['history'] else None
@@ -247,6 +273,7 @@ def ai_move_and_respond(state):
         'game_over': False,
         'valid_bids': valid_bids_after(last_bid, all_bids),
         'can_call_liar': last_bid is not None,
+        'solver_hints': compute_solver_hints(state, reveal_bot=False),
     })
 
 
@@ -307,6 +334,7 @@ def human_move():
             'result': state['result'],
             'valid_bids': [],
             'can_call_liar': False,
+            'solver_hints': compute_solver_hints(state, reveal_bot=True),
         })
 
     save_game_state(state)
