@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Liar's Dice — vs MCCFR Bot</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --surface2: #0f3460;
+    --accent: #e94560;
+    --accent2: #533483;
+    --text: #eee;
+    --text-dim: #999;
+    --green: #4ecca3;
+    --red: #e94560;
+    --gold: #f5c518;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+  }
+  h1 {
+    font-size: 1.6rem;
+    margin-bottom: 4px;
+    letter-spacing: 2px;
+  }
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    margin-bottom: 20px;
+  }
+  .game-container {
+    width: 100%;
+    max-width: 600px;
+  }
+
+  /* Dice display */
+  .dice-area {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+    text-align: center;
+  }
+  .dice-label {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+  }
+  .dice-row {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+  }
+  .die {
+    width: 64px;
+    height: 64px;
+    background: #fff;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    font-weight: bold;
+    color: #1a1a2e;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    position: relative;
+  }
+  .die.wild {
+    background: var(--gold);
+    color: #1a1a2e;
+  }
+  .die.hidden {
+    background: var(--surface2);
+    color: var(--surface2);
+    font-size: 1.4rem;
+  }
+  .die.hidden::after {
+    content: '?';
+    color: var(--text-dim);
+    font-size: 2rem;
+  }
+  .die.revealed {
+    background: var(--surface2);
+    color: #fff;
+    border: 2px solid var(--accent);
+    animation: reveal 0.4s ease;
+  }
+  @keyframes reveal {
+    from { transform: rotateY(90deg); }
+    to { transform: rotateY(0); }
+  }
+
+  /* History log */
+  .history-area {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    min-height: 60px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .history-entry {
+    padding: 4px 0;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .history-entry .who {
+    font-weight: bold;
+    width: 40px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .history-entry .who.you { color: var(--green); }
+  .history-entry .who.bot { color: var(--accent); }
+  .history-entry .bid-text {
+    background: var(--surface2);
+    padding: 2px 10px;
+    border-radius: 4px;
+  }
+  .history-entry .bid-text.liar-call {
+    background: var(--red);
+    color: #fff;
+    font-weight: bold;
+  }
+
+  /* Bidding controls */
+  .bid-area {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .bid-area h3 {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+  }
+  .bid-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .bid-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bid-selector label {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+  select {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  select:focus { outline: none; border-color: var(--green); }
+  .btn {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+  .btn-bid {
+    background: var(--green);
+    color: var(--bg);
+  }
+  .btn-bid:hover:not(:disabled) { filter: brightness(1.15); }
+  .btn-liar {
+    background: var(--red);
+    color: #fff;
+  }
+  .btn-liar:hover:not(:disabled) { filter: brightness(1.15); }
+  .btn-new {
+    background: var(--accent2);
+    color: #fff;
+  }
+  .btn-new:hover { filter: brightness(1.2); }
+
+  /* Result banner */
+  .result-banner {
+    text-align: center;
+    padding: 20px;
+    border-radius: 12px;
+    margin-bottom: 16px;
+    animation: fadeIn 0.4s ease;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .result-banner.win {
+    background: linear-gradient(135deg, #1b4332, #2d6a4f);
+    border: 1px solid var(--green);
+  }
+  .result-banner.lose {
+    background: linear-gradient(135deg, #461220, #6a2033);
+    border: 1px solid var(--red);
+  }
+  .result-banner h2 { font-size: 1.3rem; margin-bottom: 8px; }
+  .result-banner p { font-size: 0.85rem; color: var(--text-dim); }
+  .result-banner .count-detail {
+    color: var(--text);
+    font-size: 0.95rem;
+    margin-top: 8px;
+  }
+
+  /* Score */
+  .score-bar {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-bottom: 16px;
+    font-size: 0.85rem;
+  }
+  .score-bar span { color: var(--text-dim); }
+  .score-bar .val { color: var(--text); font-weight: bold; }
+
+  /* Waiting indicator */
+  .waiting {
+    text-align: center;
+    padding: 16px;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+  .waiting::after {
+    content: '';
+    animation: dots 1.5s infinite;
+  }
+  @keyframes dots {
+    0%, 20% { content: '.'; }
+    40% { content: '..'; }
+    60%, 100% { content: '...'; }
+  }
+
+  /* Start screen */
+  .start-screen {
+    text-align: center;
+    padding: 40px 20px;
+  }
+  .start-screen p {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    margin-bottom: 20px;
+    line-height: 1.6;
+  }
+  .start-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  /* Rules */
+  .rules {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-top: 8px;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+  .rules summary {
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--text);
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .rules ul {
+    margin: 8px 0 0 16px;
+  }
+</style>
+</head>
+<body>
+
+<h1>LIAR'S DICE</h1>
+<div class="subtitle">You vs MCCFR Bot (2 dice each)</div>
+
+<div class="score-bar">
+  <span>You: <span class="val" id="score-human">0</span></span>
+  <span>Bot: <span class="val" id="score-bot">0</span></span>
+</div>
+
+<div class="game-container" id="app">
+  <div class="start-screen" id="start-screen">
+    <p>
+      Each player rolls 2 dice (4 total in play).<br>
+      Take turns bidding on how many dice of a face are on the table.<br>
+      Ones (aces) are wild. Call "Liar" if you think they're bluffing.
+    </p>
+    <div class="start-buttons">
+      <button class="btn btn-bid" onclick="newGame(true)">I Go First</button>
+      <button class="btn btn-liar" onclick="newGame(false)">Bot Goes First</button>
+      <button class="btn btn-new" onclick="newGame(null)">Random</button>
+    </div>
+  </div>
+
+  <div id="game-area" style="display:none;">
+    <!-- AI dice -->
+    <div class="dice-area">
+      <div class="dice-label">Bot's Dice</div>
+      <div class="dice-row" id="ai-dice">
+        <div class="die hidden"></div>
+        <div class="die hidden"></div>
+      </div>
+    </div>
+
+    <!-- Your dice -->
+    <div class="dice-area">
+      <div class="dice-label">Your Dice</div>
+      <div class="dice-row" id="human-dice"></div>
+    </div>
+
+    <!-- History -->
+    <div class="history-area" id="history-area">
+      <div style="color:var(--text-dim); font-size:0.8rem; text-align:center;" id="history-empty">
+        No bids yet — game starting...
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div id="result-area"></div>
+
+    <!-- Bidding -->
+    <div class="bid-area" id="bid-area">
+      <h3 id="turn-label">Your Turn</h3>
+      <div class="bid-controls">
+        <div class="bid-selector">
+          <label>Qty</label>
+          <select id="bid-qty"></select>
+        </div>
+        <div class="bid-selector">
+          <label>Face</label>
+          <select id="bid-face"></select>
+        </div>
+        <button class="btn btn-bid" id="btn-bid" onclick="makeBid()">Bid</button>
+        <button class="btn btn-liar" id="btn-liar" onclick="callLiar()" disabled>Liar!</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<details class="rules">
+  <summary>Rules</summary>
+  <ul>
+    <li>Each player secretly rolls 2 dice (4 total on the table)</li>
+    <li>Players take turns making bids: "Q dice showing face F"</li>
+    <li><strong>Ones (aces) are wild</strong> — they count as any face</li>
+    <li>Each bid must be higher than the last (more dice, or same qty + higher face)</li>
+    <li>Instead of bidding, you can call <strong>"Liar!"</strong> to challenge</li>
+    <li>On a challenge: if the actual count ≥ the bid, the challenger loses; otherwise the bidder loses</li>
+    <li>The bot plays the Nash equilibrium strategy from 1M iterations of MCCFR</li>
+  </ul>
+</details>
+
+<script>
+const ALL_BIDS = [];
+for (let q = 1; q <= 4; q++)
+  for (let f = 2; f <= 6; f++)
+    ALL_BIDS.push(`${q}x${f}`);
+
+let state = {};
+let scores = { human: 0, bot: 0 };
+
+const dieFaces = {
+  1: '\u2680', 2: '\u2681', 3: '\u2682',
+  4: '\u2683', 5: '\u2684', 6: '\u2685'
+};
+
+function renderDie(value, isWild) {
+  const cls = isWild ? 'die wild' : 'die';
+  return `<div class="${cls}" title="${value}">${dieFaces[value]}</div>`;
+}
+
+function renderHiddenDie() {
+  return `<div class="die hidden"></div>`;
+}
+
+function renderRevealedDie(value) {
+  const cls = value === 1 ? 'die revealed wild' : 'die revealed';
+  return `<div class="${cls}" title="${value}">${dieFaces[value]}</div>`;
+}
+
+function formatBid(bid) {
+  if (bid === 'liar') return 'LIAR!';
+  const [q, f] = bid.split('x');
+  const faceNames = {2:'twos', 3:'threes', 4:'fours', 5:'fives', 6:'sixes'};
+  return `${q} × ${faceNames[f] || f}`;
+}
+
+function updateScores() {
+  document.getElementById('score-human').textContent = scores.human;
+  document.getElementById('score-bot').textContent = scores.bot;
+}
+
+async function newGame(humanFirst) {
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('game-area').style.display = 'block';
+  document.getElementById('result-area').innerHTML = '';
+  document.getElementById('history-area').innerHTML =
+    '<div style="color:var(--text-dim); font-size:0.8rem; text-align:center;">No bids yet</div>';
+
+  // Reset AI dice display
+  document.getElementById('ai-dice').innerHTML = renderHiddenDie() + renderHiddenDie();
+
+  const resp = await fetch('/api/new_game', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ human_first: humanFirst }),
+  });
+  state = await resp.json();
+  renderState();
+}
+
+function renderState() {
+  // Render human dice
+  const hd = document.getElementById('human-dice');
+  hd.innerHTML = state.human_dice.map(d => renderDie(d, d === 1)).join('');
+
+  // Render history
+  const ha = document.getElementById('history-area');
+  if (state.history.length === 0) {
+    ha.innerHTML = '<div style="color:var(--text-dim); font-size:0.8rem; text-align:center;">No bids yet</div>';
+  } else {
+    let html = '';
+    // P0 goes first, figure out who is who
+    for (let i = 0; i < state.history.length; i++) {
+      const playerNum = i % 2;  // 0 for P0's turn, 1 for P1's turn
+      const isHuman = playerNum === state.human_player;
+      const who = isHuman ? 'You' : 'Bot';
+      const whoCls = isHuman ? 'you' : 'bot';
+      const bid = state.history[i];
+      const bidCls = bid === 'liar' ? 'bid-text liar-call' : 'bid-text';
+      html += `<div class="history-entry">
+        <span class="who ${whoCls}">${who}</span>
+        <span class="${bidCls}">${formatBid(bid)}</span>
+      </div>`;
+    }
+    ha.innerHTML = html;
+    ha.scrollTop = ha.scrollHeight;
+  }
+
+  // Result
+  if (state.game_over && state.result) {
+    renderResult(state.result);
+  }
+
+  // Bid controls
+  const bidArea = document.getElementById('bid-area');
+  if (state.game_over) {
+    bidArea.innerHTML = `
+      <div style="text-align:center;">
+        <button class="btn btn-new" onclick="newGame(null)" style="margin-top:8px;">Play Again (Random)</button>
+        <div style="margin-top:8px; display:flex; gap:8px; justify-content:center;">
+          <button class="btn btn-bid" onclick="newGame(true)" style="font-size:0.75rem; padding:6px 14px;">I Go First</button>
+          <button class="btn btn-liar" onclick="newGame(false)" style="font-size:0.75rem; padding:6px 14px;">Bot First</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (!state.your_turn) {
+    bidArea.innerHTML = '<div class="waiting">Bot is thinking</div>';
+    return;
+  }
+
+  // Build bid selectors from valid bids
+  const validBids = state.valid_bids || [];
+  const qtys = [...new Set(validBids.map(b => b.split('x')[0]))];
+  const qtySelect = document.getElementById('bid-qty') || {};
+
+  bidArea.innerHTML = `
+    <h3>Your Turn — Make a bid</h3>
+    <div class="bid-controls">
+      <div class="bid-selector">
+        <label>Qty</label>
+        <select id="bid-qty" onchange="updateFaces()">
+          ${qtys.map(q => `<option value="${q}">${q}</option>`).join('')}
+        </select>
+      </div>
+      <div class="bid-selector">
+        <label>Face</label>
+        <select id="bid-face"></select>
+      </div>
+      <button class="btn btn-bid" onclick="makeBid()">Bid</button>
+      ${state.can_call_liar ? '<button class="btn btn-liar" onclick="callLiar()">Liar!</button>' : ''}
+    </div>`;
+  updateFaces();
+}
+
+function updateFaces() {
+  const qty = document.getElementById('bid-qty').value;
+  const validBids = state.valid_bids || [];
+  const faces = validBids.filter(b => b.startsWith(qty + 'x')).map(b => b.split('x')[1]);
+  const faceSelect = document.getElementById('bid-face');
+  const faceNames = {2:'2 (twos)', 3:'3 (threes)', 4:'4 (fours)', 5:'5 (fives)', 6:'6 (sixes)'};
+  faceSelect.innerHTML = faces.map(f => `<option value="${f}">${faceNames[f] || f}</option>`).join('');
+}
+
+async function makeBid() {
+  const qty = document.getElementById('bid-qty').value;
+  const face = document.getElementById('bid-face').value;
+  const action = `${qty}x${face}`;
+
+  document.getElementById('bid-area').innerHTML = '<div class="waiting">Bot is thinking</div>';
+
+  const resp = await fetch('/api/move', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ action }),
+  });
+  state = await resp.json();
+  renderState();
+}
+
+async function callLiar() {
+  document.getElementById('bid-area').innerHTML = '<div class="waiting">Resolving</div>';
+
+  const resp = await fetch('/api/move', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ action: 'liar' }),
+  });
+  state = await resp.json();
+  renderState();
+}
+
+function renderResult(r) {
+  const challenger = r.challenger === 'human' ? 'You' : 'Bot';
+  const bidder = r.challenger === 'human' ? 'Bot' : 'You';
+  const winClass = r.human_wins ? 'win' : 'lose';
+  const winText = r.human_wins ? 'You Win!' : 'You Lose!';
+
+  if (r.human_wins) scores.human++;
+  else scores.bot++;
+  updateScores();
+
+  const faceNames = {2:'twos', 3:'threes', 4:'fours', 5:'fives', 6:'sixes'};
+  const faceName = faceNames[r.bid_face] || r.bid_face;
+
+  // Reveal AI dice
+  document.getElementById('ai-dice').innerHTML =
+    r.ai_dice.map(d => renderRevealedDie(d)).join('');
+
+  document.getElementById('result-area').innerHTML = `
+    <div class="result-banner ${winClass}">
+      <h2>${winText}</h2>
+      <p>${challenger} called Liar on "${r.bid_qty} × ${faceName}"</p>
+      <div class="count-detail">
+        Actual count: <strong>${r.actual_count}</strong> ${faceName} (including wild aces) out of ${r.bid_qty} needed
+      </div>
+    </div>`;
+}
+</script>
+
+</body>
+</html>
