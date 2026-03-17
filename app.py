@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Liar's Dice 2v2 — play against MCCFR bot locally."""
+"""Liar's Dice — play against MCCFR bot locally. Supports 1v1 and 2v2."""
 
 import sqlite3
 import random
@@ -10,31 +10,59 @@ from flask import Flask, render_template, jsonify, request, session
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-DB_FILE = "strategy_2v2.db"
+# Game mode configs
+MODES = {
+    '1v1': {
+        'db': 'strategy_1v1.db',
+        'dice_per_player': 1,
+        'total_dice': 2,
+        'label': '1 vs 1',
+    },
+    '2v2': {
+        'db': 'strategy_2v2.db',
+        'dice_per_player': 2,
+        'total_dice': 4,
+        'label': '2 vs 2',
+    },
+}
 
-# All valid bids in order (4 total dice, faces 2-6, aces wild)
-ALL_BIDS = []
-for qty in range(1, 5):  # 1 to 4
-    for face in range(2, 7):  # 2 to 6
-        ALL_BIDS.append(f"{qty}x{face}")
-BID_INDEX = {b: i for i, b in enumerate(ALL_BIDS)}
 
-# All 21 possible hands (2 dice, sorted ascending)
-ALL_HANDS = []
-for _i in range(1, 7):
-    for _j in range(_i, 7):
-        ALL_HANDS.append(f"{_i},{_j}")
+def get_all_bids(total_dice):
+    """All valid bids for a given total number of dice."""
+    bids = []
+    for qty in range(1, total_dice + 1):
+        for face in range(2, 7):
+            bids.append(f"{qty}x{face}")
+    return bids
 
 
-def get_db():
-    """Get a thread-local DB connection."""
-    db = sqlite3.connect(DB_FILE)
+def get_all_hands(dice_per_player):
+    """All possible hands (sorted ascending) for a given number of dice."""
+    if dice_per_player == 1:
+        return [str(i) for i in range(1, 7)]
+    else:
+        hands = []
+        for i in range(1, 7):
+            for j in range(i, 7):
+                hands.append(f"{i},{j}")
+        return hands
+
+
+def get_mode(req):
+    """Get mode from request args, default to 2v2."""
+    mode = req.args.get('mode') or (req.get_json() or {}).get('mode') or '2v2'
+    if mode not in MODES:
+        mode = '2v2'
+    return mode
+
+
+def get_db(mode):
+    db = sqlite3.connect(MODES[mode]['db'])
     db.execute("PRAGMA query_only=ON")
     return db
 
 
 def lookup_strategy(db, player, hand, history):
-    """Look up the MCCFR strategy for a given info set."""
     hand_sorted = sorted(hand)
     hand_str = ','.join(str(d) for d in hand_sorted)
     if not history:
@@ -53,7 +81,6 @@ def lookup_strategy(db, player, hand, history):
 
 
 def sample_action(strategy):
-    """Sample an action from a normalized strategy distribution."""
     total = sum(strategy.values())
     r = random.random() * total
     cumulative = 0.0
@@ -64,27 +91,24 @@ def sample_action(strategy):
     return list(strategy.keys())[-1]
 
 
-def valid_bids_after(last_bid):
-    """Return all bids strictly higher than last_bid."""
+def valid_bids_after(last_bid, all_bids):
+    bid_index = {b: i for i, b in enumerate(all_bids)}
     if last_bid is None:
-        return ALL_BIDS[:]
-    idx = BID_INDEX.get(last_bid, -1)
-    return ALL_BIDS[idx + 1:]
+        return all_bids[:]
+    idx = bid_index.get(last_bid, -1)
+    return all_bids[idx + 1:]
 
 
 def resolve_challenge(dice_p0, dice_p1, last_bid):
-    """Resolve a 'liar' call. Returns (challenger_wins, actual_count, bid_qty, bid_face)."""
     parts = last_bid.split('x')
     bid_qty = int(parts[0])
     bid_face = int(parts[1])
     all_dice = dice_p0 + dice_p1
-    # Count matching dice (including aces/ones as wild)
     count = sum(1 for d in all_dice if d == bid_face or d == 1)
     return count < bid_qty, count, bid_qty, bid_face
 
 
 def get_game_state():
-    """Get or create game state from session."""
     if 'game' not in session:
         return None
     return json.loads(session['game'])
@@ -94,86 +118,51 @@ def save_game_state(state):
     session['game'] = json.dumps(state)
 
 
+# --- Routes ---
+
 @app.route('/')
 def index():
     return render_template('index.html')
 
 
+@app.route('/play')
+def play():
+    mode = get_mode(request)
+    return render_template('play.html', mode=mode, config=MODES[mode])
+
+
 @app.route('/explorer')
 def explorer():
-    return render_template('explorer.html')
+    mode = get_mode(request)
+    return render_template('explorer.html', mode=mode, config=MODES[mode])
 
 
-@app.route('/api/explorer/node')
-def explorer_node():
-    """Return all 21 hands' strategies for the acting player at a given node."""
-    history_param = request.args.get('history', '').strip()
-    history = [h.strip() for h in history_param.split(',') if h.strip()] if history_param else []
-    player = len(history) % 2
-
-    if not history:
-        history_str = "opening"
-    else:
-        history_str = ' -> '.join(history)
-
-    db = get_db()
-    hands = []
-    all_actions_set = set()
-
-    for hand_str in ALL_HANDS:
-        key = f"P{player}|{hand_str}|{history_str}"
-        row = db.execute("SELECT actions FROM strategy WHERE key = ?", (key,)).fetchone()
-        actions = {}
-        if row:
-            for part in row[0].split('|'):
-                action, prob = part.split(':')
-                actions[action] = float(prob)
-                all_actions_set.add(action)
-        hands.append({
-            'hand': hand_str,
-            'actions': actions,
-        })
-
-    db.close()
-
-    # Sort actions in bid order, liar last
-    def action_sort_key(a):
-        if a == 'liar':
-            return len(ALL_BIDS)
-        return BID_INDEX.get(a, -1)
-
-    all_actions = sorted(all_actions_set, key=action_sort_key)
-    navigable_actions = [a for a in all_actions if a != 'liar']
-
-    return jsonify({
-        'player': player,
-        'history': history,
-        'history_display': history_str,
-        'hands': hands,
-        'all_actions': all_actions,
-        'navigable_actions': navigable_actions,
-    })
-
+# --- Game API ---
 
 @app.route('/api/new_game', methods=['POST'])
 def new_game():
     data = request.get_json() or {}
+    mode = data.get('mode', '2v2')
+    if mode not in MODES:
+        mode = '2v2'
+    cfg = MODES[mode]
+    all_bids = get_all_bids(cfg['total_dice'])
+
     human_first = data.get('human_first', random.choice([True, False]))
+    human_dice = sorted([random.randint(1, 6) for _ in range(cfg['dice_per_player'])])
+    ai_dice = sorted([random.randint(1, 6) for _ in range(cfg['dice_per_player'])])
 
-    human_dice = sorted([random.randint(1, 6) for _ in range(2)])
-    ai_dice = sorted([random.randint(1, 6) for _ in range(2)])
-
-    # human_player: which P# the human is (0 = goes first, 1 = goes second)
     human_player = 0 if human_first else 1
     ai_player = 1 - human_player
 
     state = {
+        'mode': mode,
         'human_dice': human_dice,
         'ai_dice': ai_dice,
         'human_player': human_player,
         'ai_player': ai_player,
         'history': [],
-        'current_turn': 0,  # P0 always starts
+        'current_turn': 0,
         'game_over': False,
         'result': None,
     }
@@ -185,11 +174,10 @@ def new_game():
         'human_goes_first': human_first,
         'history': [],
         'your_turn': human_player == 0,
-        'valid_bids': ALL_BIDS[:],
+        'valid_bids': all_bids[:],
         'can_call_liar': False,
     }
 
-    # If AI goes first, make AI's move
     if not human_first:
         return ai_move_and_respond(state)
 
@@ -197,17 +185,19 @@ def new_game():
 
 
 def ai_move_and_respond(state):
-    """Have the AI make its move and return response."""
-    db = get_db()
+    mode = state['mode']
+    cfg = MODES[mode]
+    all_bids = get_all_bids(cfg['total_dice'])
+
+    db = get_db(mode)
     strategy = lookup_strategy(db, state['ai_player'], state['ai_dice'], state['history'])
     db.close()
 
     if strategy:
         action = sample_action(strategy)
     else:
-        # Fallback: if no strategy found, pick a random valid bid or call liar
         last_bid = state['history'][-1] if state['history'] else None
-        options = valid_bids_after(last_bid)
+        options = valid_bids_after(last_bid, all_bids)
         if not options or (last_bid and random.random() < 0.5):
             action = 'liar'
         else:
@@ -217,16 +207,14 @@ def ai_move_and_respond(state):
     state['current_turn'] = 1 - state['current_turn']
 
     if action == 'liar':
-        # AI called liar on human's bid
         last_bid = state['history'][-2]
         challenger_wins, actual_count, bid_qty, bid_face = resolve_challenge(
             state['human_dice'] if state['human_player'] == 0 else state['ai_dice'],
             state['ai_dice'] if state['human_player'] == 0 else state['human_dice'],
             last_bid
         )
-        # Challenger is AI
         state['game_over'] = True
-        human_wins = not challenger_wins  # if AI's challenge succeeds, human loses
+        human_wins = not challenger_wins
         state['result'] = {
             'challenger': 'ai',
             'last_bid': last_bid,
@@ -248,7 +236,6 @@ def ai_move_and_respond(state):
             'can_call_liar': False,
         })
 
-    # AI made a bid, now it's human's turn
     last_bid = state['history'][-1] if state['history'] else None
     save_game_state(state)
 
@@ -258,7 +245,7 @@ def ai_move_and_respond(state):
         'history': state['history'],
         'your_turn': True,
         'game_over': False,
-        'valid_bids': valid_bids_after(last_bid),
+        'valid_bids': valid_bids_after(last_bid, all_bids),
         'can_call_liar': last_bid is not None,
     })
 
@@ -274,17 +261,19 @@ def human_move():
 
     data = request.get_json()
     action = data.get('action')
-
     if not action:
         return jsonify({'error': 'No action provided'}), 400
 
-    # Validate action
+    mode = state['mode']
+    cfg = MODES[mode]
+    all_bids = get_all_bids(cfg['total_dice'])
+
     last_bid = state['history'][-1] if state['history'] else None
     if action == 'liar':
         if last_bid is None:
             return jsonify({'error': 'Cannot call liar on opening'}), 400
     else:
-        valid = valid_bids_after(last_bid)
+        valid = valid_bids_after(last_bid, all_bids)
         if action not in valid:
             return jsonify({'error': f'Invalid bid: {action}'}), 400
 
@@ -292,7 +281,6 @@ def human_move():
     state['current_turn'] = 1 - state['current_turn']
 
     if action == 'liar':
-        # Human called liar on AI's bid
         challenged_bid = state['history'][-2]
         p0_dice = state['human_dice'] if state['human_player'] == 0 else state['ai_dice']
         p1_dice = state['ai_dice'] if state['human_player'] == 0 else state['human_dice']
@@ -321,14 +309,76 @@ def human_move():
             'can_call_liar': False,
         })
 
-    # Human made a bid, now AI responds
     save_game_state(state)
     return ai_move_and_respond(state)
 
 
+# --- Explorer API ---
+
+@app.route('/api/explorer/node')
+def explorer_node():
+    mode = request.args.get('mode', '2v2')
+    if mode not in MODES:
+        mode = '2v2'
+    cfg = MODES[mode]
+    all_bids = get_all_bids(cfg['total_dice'])
+    bid_index = {b: i for i, b in enumerate(all_bids)}
+    all_hands = get_all_hands(cfg['dice_per_player'])
+
+    history_param = request.args.get('history', '').strip()
+    history = [h.strip() for h in history_param.split(',') if h.strip()] if history_param else []
+    player = len(history) % 2
+
+    if not history:
+        history_str = "opening"
+    else:
+        history_str = ' -> '.join(history)
+
+    db = get_db(mode)
+    hands = []
+    all_actions_set = set()
+
+    for hand_str in all_hands:
+        key = f"P{player}|{hand_str}|{history_str}"
+        row = db.execute("SELECT actions FROM strategy WHERE key = ?", (key,)).fetchone()
+        actions = {}
+        if row:
+            for part in row[0].split('|'):
+                action, prob = part.split(':')
+                actions[action] = float(prob)
+                all_actions_set.add(action)
+        hands.append({
+            'hand': hand_str,
+            'actions': actions,
+        })
+
+    db.close()
+
+    def action_sort_key(a):
+        if a == 'liar':
+            return len(all_bids)
+        return bid_index.get(a, -1)
+
+    all_actions = sorted(all_actions_set, key=action_sort_key)
+    navigable_actions = [a for a in all_actions if a != 'liar']
+
+    return jsonify({
+        'player': player,
+        'history': history,
+        'history_display': history_str,
+        'hands': hands,
+        'all_actions': all_actions,
+        'navigable_actions': navigable_actions,
+    })
+
+
 if __name__ == '__main__':
-    if not os.path.exists(DB_FILE):
-        print(f"ERROR: {DB_FILE} not found. Run 'python3 convert_strategy.py' first.")
-        exit(1)
+    missing = []
+    for mode, cfg in MODES.items():
+        if not os.path.exists(cfg['db']):
+            missing.append(cfg['db'])
+    if missing:
+        print(f"WARNING: Missing DB files: {', '.join(missing)}")
+        print("Run 'python3 convert_strategy.py' first.")
     print("Starting Liar's Dice at http://localhost:5050")
     app.run(host='127.0.0.1', port=5050, debug=False)

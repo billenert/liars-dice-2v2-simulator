@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""Convert strategy_2v2.txt to SQLite for fast lookups."""
+"""Convert strategy txt files to SQLite for fast lookups."""
 
 import sqlite3
 import re
 import sys
 import time
 
-STRATEGY_FILE = "strategy_2v2.txt"
-DB_FILE = "strategy_2v2.db"
 BATCH_SIZE = 50000
 
-def parse_and_insert():
-    conn = sqlite3.connect(DB_FILE)
+def parse_and_insert(strategy_file, db_file):
+    conn = sqlite3.connect(db_file)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=OFF")
     conn.execute("DROP TABLE IF EXISTS strategy")
@@ -31,7 +29,7 @@ def parse_and_insert():
     count = 0
     start = time.time()
 
-    with open(STRATEGY_FILE, 'r') as f:
+    with open(strategy_file, 'r') as f:
         for line in f:
             line = line.rstrip('\n')
 
@@ -86,8 +84,19 @@ def parse_and_insert():
     conn.commit()
     conn.close()
     elapsed = time.time() - start
-    print(f"Done! {DB_FILE} created in {elapsed:.0f}s")
+    print(f"Done! {db_file} created in {elapsed:.0f}s")
 
 if __name__ == '__main__':
-    print(f"Converting {STRATEGY_FILE} -> {DB_FILE}...")
-    parse_and_insert()
+    files = [
+        ("strategy_1v1.txt", "strategy_1v1.db"),
+        ("strategy_2v2.txt", "strategy_2v2.db"),
+    ]
+    import os
+    for txt, db in files:
+        if os.path.exists(txt) and not os.path.exists(db):
+            print(f"Converting {txt} -> {db}...")
+            parse_and_insert(txt, db)
+        elif os.path.exists(txt) and os.path.exists(db):
+            print(f"Skipping {txt} ({db} already exists)")
+        else:
+            print(f"Skipping {txt} (not found)")

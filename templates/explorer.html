@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Strategy Explorer — Liar's Dice</title>
+<title>Strategy Explorer — Liar's Dice {{ config.label }}</title>
 <style>
   :root {
     --bg: #1a1a2e;
@@ -255,8 +255,16 @@
 <body>
 
 <div class="header">
-  <h1>STRATEGY EXPLORER</h1>
-  <a href="/">Play Game</a>
+  <h1>STRATEGY EXPLORER — {{ config.label }}</h1>
+  <div>
+    <a href="/play?mode={{ mode }}">Play</a>
+    &middot; <a href="/">Home</a>
+    {% if mode == '1v1' %}
+    &middot; <a href="/explorer?mode=2v2">2v2 Explorer</a>
+    {% else %}
+    &middot; <a href="/explorer?mode=1v1">1v1 Explorer</a>
+    {% endif %}
+  </div>
 </div>
 
 <div id="app">
@@ -272,9 +280,12 @@ let nodeData = null;
 
 // --- Action Colors ---
 // Generate distinct colors for each possible action
+const GAME_MODE = '{{ mode }}';
+const TOTAL_DICE = {{ config.total_dice }};
+
 const ACTION_COLORS = {};
 const BIDS = [];
-for (let q = 1; q <= 4; q++)
+for (let q = 1; q <= TOTAL_DICE; q++)
   for (let f = 2; f <= 6; f++)
     BIDS.push(`${q}x${f}`);
 
@@ -322,7 +333,7 @@ async function loadNode(history) {
   app.innerHTML = '<div class="loading">Loading...</div>';
 
   const param = history.join(',');
-  const resp = await fetch(`/api/explorer/node?history=${encodeURIComponent(param)}`);
+  const resp = await fetch(`/api/explorer/node?mode=${GAME_MODE}&history=${encodeURIComponent(param)}`);
   if (!resp.ok) {
     app.innerHTML = '<div class="error-msg">No strategy data for this node.</div>';
     return;
